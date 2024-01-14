@@ -1,0 +1,114 @@
+import sys
+from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QMessageBox
+from PyQt6.QtCore import Qt
+from pymongo import MongoClient
+from bson import ObjectId
+
+class OtelRezervasyonSistemi(QWidget):
+    def _init_(self):
+        super()._init_()
+
+        self.setWindowTitle("Otel Rezervasyon Sistemi")
+        self.setGeometry(100, 100, 400, 200)
+
+        self.init_ui()
+
+    def init_ui(self):
+        
+        self.tc_label = QLabel("TC Kimlik:")
+        self.tc_input = QLineEdit()
+
+        self.isim_label = QLabel("İsim:")
+        self.isim_input = QLineEdit()
+
+        self.tel_no_label = QLabel("Telefon Numarası:")
+        self.tel_no_input = QLineEdit()
+
+        self.giris_button = QPushButton("Giriş Yap")
+        self.giris_button.clicked.connect(self.giris_yap)
+
+        layout_giris = QVBoxLayout()
+        layout_giris.addWidget(self.tc_label)
+        layout_giris.addWidget(self.tc_input)
+        layout_giris.addWidget(self.isim_label)
+        layout_giris.addWidget(self.isim_input)
+        layout_giris.addWidget(self.tel_no_label)
+        layout_giris.addWidget(self.tel_no_input)
+        layout_giris.addWidget(self.giris_button)
+
+        self.giris_widget = QWidget()
+        self.giris_widget.setLayout(layout_giris)
+
+        
+        self.oda_bilgi_label = QLabel("Oda Bilgileri:")
+        self.oda_bilgi_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center alignment
+
+        self.kiralama_durumu_label = QLabel("Kiralama Durumu:")
+        self.kiralama_durumu_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center alignment
+
+        self.kiralama_button = QPushButton("Kirala")
+        self.kiralama_button.clicked.connect(self.oda_kirala)
+
+        layout_oda = QVBoxLayout()
+        layout_oda.addWidget(self.oda_bilgi_label)
+        layout_oda.addWidget(self.kiralama_durumu_label)
+        layout_oda.addWidget(self.kiralama_button)
+
+        self.oda_widget = QWidget()
+        self.oda_widget.setLayout(layout_oda)
+
+       
+        self.layout_main = QVBoxLayout(self)
+        self.layout_main.addWidget(self.giris_widget)
+        self.layout_main.addWidget(self.oda_widget)
+        self.oda_widget.hide()
+
+        self.show()
+
+    def giris_yap(self):
+        tc = self.tc_input.text()
+        isim = self.isim_input.text()
+        tel_no = self.tel_no_input.text()
+
+        if tc and isim and tel_no:
+           
+            client = MongoClient("mongodb://localhost:27017/")  # Yerel MongoDB server'ı
+            db = client["otel"]
+            giris_koleksiyonu = db["giris"]
+
+            kullanici = {"tc": tc, "isim": isim, "tel_no": tel_no}
+            kullanici_id = giris_koleksiyonu.insert_one(kullanici).inserted_id
+
+            self.giris_widget.hide()
+            self.oda_widget.show()
+
+          
+            oda_koleksiyonu = db["oda"]
+            oda_bilgisi = oda_koleksiyonu.find_one({"oda_numarasi": 101})
+
+            if oda_bilgisi:
+                self.guncelle_oda_bilgisi(oda_bilgisi)
+            else:
+                QMessageBox.warning(self, "Uyarı", "Belirtilen oda numarası bulunamadı.")
+        else:
+            QMessageBox.critical(self, "Hata", "Boş alan bırakmayınız.")
+
+    def oda_kirala(self):
+        oda_numarasi = 101
+        oda_koleksiyonu = MongoClient("mongodb://localhost:27017/")
+        oda = oda_koleksiyonu.find_one({"oda_numarasi": oda_numarasi})
+
+        if oda["müsaitlik_durumu"]:
+            oda_koleksiyonu.update_one({"oda_numarasi": oda_numarasi}, {"$set": {"müsaitlik_durumu": False, "kiralayan_kullanici": str(ObjectId())}})
+            QMessageBox.information(self, "Başarı", "Oda başarıyla kiralandı.")
+        else:
+            QMessageBox.warning(self, "Uyarı", "Bu oda kiralanamaz, doludur.")
+
+    def guncelle_oda_bilgisi(self, oda_bilgisi):
+        self.oda_bilgi_label.setText(f"Oda Bilgileri: {oda_bilgisi['oda_numarasi']} - Fiyat: {oda_bilgisi['fiyat']}")
+        self.kiralama_durumu_label.setText("Kiralama Durumu: " + ("Müsait" if oda_bilgisi['müsaitlik_durumu'] else "Dolu"))
+
+if _name_ == "_main_":
+    app = QApplication(sys.argv)
+    ex = OtelRezervasyonSistemi()
+    sys.exit(app.exec())
